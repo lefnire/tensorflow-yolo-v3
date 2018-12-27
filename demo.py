@@ -3,6 +3,7 @@
 import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageDraw
+import pdb
 
 from yolo_v3 import yolo_v3, load_weights, detections_boxes, non_max_suppression
 
@@ -61,6 +62,13 @@ def main(argv=None):
 
     with tf.Session() as sess:
         sess.run(load_ops)
+
+        from tensorflow.python.framework import graph_io
+        frozen = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, ['concat_1'])
+        graph_io.write_graph(frozen, './', 'yolo_v3.pb', as_text=False)
+
+        writer = tf.summary.FileWriter("./tf_logs", graph=sess.graph)
+        writer.flush()
 
         detected_boxes = sess.run(boxes, feed_dict={inputs: [np.array(img_resized, dtype=np.float32)]})
 
