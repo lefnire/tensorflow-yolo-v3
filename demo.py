@@ -5,97 +5,94 @@ import tensorflow as tf
 from PIL import Image
 import time
 
-import yolo_v3
-import yolo_v3_tiny
+from models.model import Model
+from models.tensorflow_yolo_v3 import yolo_v3
+from models.tensorflow_yolo_v3 import yolo_v3_tiny
+from box import Box
 
-from utils import load_coco_names, draw_boxes, get_boxes_and_inputs, get_boxes_and_inputs_pb, non_max_suppression, \
-                  load_graph, letter_box_image
+from models.tensorflow_yolo_v3.utils import load_coco_names, draw_boxes, draw_boxes2, \
+    get_boxes_and_inputs, get_boxes_and_inputs_pb, non_max_suppression, load_graph, letter_box_image
 
-FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string(
-    'input_img', '', 'Input image')
-tf.app.flags.DEFINE_string(
-    'output_img', '', 'Output image')
-tf.app.flags.DEFINE_string(
-    'class_names', 'coco.names', 'File with class names')
-tf.app.flags.DEFINE_string(
-    'weights_file', 'yolov3.weights', 'Binary file with detector weights')
-tf.app.flags.DEFINE_string(
-    'data_format', 'NCHW', 'Data format: NCHW (gpu only) / NHWC')
-tf.app.flags.DEFINE_string(
-    'ckpt_file', './saved_model/model.ckpt', 'Checkpoint file')
-tf.app.flags.DEFINE_string(
-    'frozen_model', '', 'Frozen tensorflow protobuf model')
-tf.app.flags.DEFINE_bool(
-    'tiny', False, 'Use tiny version of YOLOv3')
+class Yolov3(Model):
+    devices = ['CPU', 'GPU']
 
-tf.app.flags.DEFINE_integer(
-    'size', 416, 'Image size')
+    def __init__(self, args):
+        if args.device not in self.devices:
+            exit(0)
 
-tf.app.flags.DEFINE_float(
-    'conf_threshold', 0.5, 'Confidence threshold')
-tf.app.flags.DEFINE_float(
-    'iou_threshold', 0.4, 'IoU threshold')
+        args.input_img = ''  # Input image
+        args.output_img = ''  # Output image
+        args.class_names = 'models/tensorflow_yolo_v3/coco.names'  # File with class names
+        args.weights_file = 'models/tensorflow_yolo_v3/yolov3.weights'  # Binary file with detector weights
+        # args.data_format = 'NCHW',  # Data format: NCHW (gpu only) / NHWC
+        args.ckpt_file = './models/tensorflow_yolo_v3/saved_model/model.ckpt'  # Checkpoint file
+        args.frozen_model = 'models/tensorflow_yolo_v3/frozen_darknet_yolov3_model.pb'  # Frozen tensorflow protobuf model
+        args.tiny = False  # Use tiny version of YOLOv3
+        args.size = 416  # Image size
+        args.conf_threshold = 0.7  # Confidence threshold
+        args.iou_threshold = 0.6  # IoU threshold
+        args.gpu_memory_fraction = 1.0  # Gpu memory fraction to use
 
-tf.app.flags.DEFINE_float(
-    'gpu_memory_fraction', 1.0, 'Gpu memory fraction to use')
-
-def main(argv=None):
-
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
-
-    config = tf.ConfigProto(
-        gpu_options=gpu_options,
-        log_device_placement=False,
-    )
-
-    img = Image.open(FLAGS.input_img)
-    img_resized = letter_box_image(img, FLAGS.size, FLAGS.size, 128)
-    img_resized = img_resized.astype(np.float32)
-    classes = load_coco_names(FLAGS.class_names)
-
-    if FLAGS.frozen_model:
-
-        t0 = time.time()
-        frozenGraph = load_graph(FLAGS.frozen_model)
-        print("Loaded graph in {:.2f}s".format(time.time()-t0))
-
-        boxes, inputs = get_boxes_and_inputs_pb(frozenGraph)
-
-        with tf.Session(graph=frozenGraph, config=config) as sess:
-            t0 = time.time()
-            detected_boxes = sess.run(
-                boxes, feed_dict={inputs: [img_resized]})
-
-    else:
-        if FLAGS.tiny:
-            model = yolo_v3_tiny.yolo_v3_tiny
+        # FIXME init network in __init__, re-use here
+        if args.device == 'CPU':
+            args.frozen_model = 'models/tensorflow_yolo_v3/frozen_darknet_yolov3_model_CPU.pb'
+            args.data_format = 'NHWC'
+            config = tf.ConfigProto(device_count={'GPU': 0})
+        elif args.device == 'GPU':
+            args.frozen_model = 'models/tensorflow_yolo_v3/frozen_darknet_yolov3_model_GPU.pb'
+            args.data_format = 'NCHW'
+            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction)
+            config = tf.ConfigProto(
+                gpu_options=gpu_options,
+                log_device_placement=False,
+            )
         else:
-            model = yolo_v3.yolo_v3
+            raise NotImplementedError()
 
-        boxes, inputs = get_boxes_and_inputs(model, len(classes), FLAGS.size, FLAGS.data_format)
+        self.classes = load_coco_names(args.class_names)
+        if args.frozen_model:
+            frozenGraph = load_graph(args.frozen_model)
+            self.boxes, self.inputs = get_boxes_and_inputs_pb(frozenGraph)
+            self.sess = tf.Session(graph=frozenGraph, config=config)
+        else:
+            if args.tiny:
+                model = yolo_v3_tiny.yolo_v3_tiny
+            else:
+                model = yolo_v3.yolo_v3
+            self.boxes, self.inputs = get_boxes_and_inputs(model, len(self.classes), args.size, args.data_format)
+            saver = tf.train.Saver(var_list=tf.global_variables(scope='detector'))
+            self.sess = tf.Session(config=config)
+            saver.restore(self.sess, args.ckpt_file)
 
-        saver = tf.train.Saver(var_list=tf.global_variables(scope='detector'))
+        super().__init__(args)
 
-        with tf.Session(config=config) as sess:
-            t0 = time.time()
-            saver.restore(sess, FLAGS.ckpt_file)
-            print('Model restored in {:.2f}s'.format(time.time()-t0))
+    def draw_boxes(self, frame):
+        args = self.args
 
-            t0 = time.time()
-            detected_boxes = sess.run(
-                boxes, feed_dict={inputs: [img_resized]})
+        img = Image.fromarray(np.uint8(frame))  # .fromarray(frame)
+        # img = Image.open(args.input_img)
+        img_resized = letter_box_image(img, args.size, args.size, 128)
+        img_resized = img_resized.astype(np.float32)
 
-    filtered_boxes = non_max_suppression(detected_boxes,
-                                         confidence_threshold=FLAGS.conf_threshold,
-                                         iou_threshold=FLAGS.iou_threshold)
-    print("Predictions found in {:.2f}s".format(time.time() - t0))
+        detected_boxes = self.sess.run(
+            self.boxes,
+            feed_dict={self.inputs: [img_resized]}
+        )
 
-    draw_boxes(filtered_boxes, img, classes, (FLAGS.size, FLAGS.size), True)
+        filtered_boxes = non_max_suppression(
+            detected_boxes,
+            confidence_threshold=args.conf_threshold,
+            iou_threshold=args.iou_threshold
+        )
 
-    img.save(FLAGS.output_img)
+        return draw_boxes2(filtered_boxes, img, frame, self.classes, (args.size, args.size), True)
 
-
-if __name__ == '__main__':
-    tf.app.run()
+        # img.save(args.output_img)
+        
+    def close(self):
+        self.sess.close()
+        # del self.sess, self.inputs, self.boxes
+        tf.reset_default_graph()
+        # tf.keras.backend.clear_session()
+        super().close()

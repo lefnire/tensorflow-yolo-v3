@@ -120,3 +120,4 @@ coco.names
 # Tensorflow
 checkpoint
 *.ckpt.*
+*.pb

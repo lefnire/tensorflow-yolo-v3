@@ -44,7 +44,8 @@ def main(argv=None):
     # Sets the output nodes in the current session
     boxes = detections_boxes(detections)
 
-    with tf.Session() as sess:
+    config = tf.ConfigProto(device_count={'GPU': 0})
+    with tf.Session(config=config) as sess:
         sess.run(load_ops)
         freeze_graph(sess, FLAGS.output_graph)
 
