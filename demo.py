@@ -67,7 +67,7 @@ class Yolov3(Model):
 
         super().__init__(args)
 
-    def draw_boxes(self, frame):
+    def get_bboxes(self, frame):
         args = self.args
 
         img = Image.fromarray(np.uint8(frame))  # .fromarray(frame)
@@ -86,7 +86,7 @@ class Yolov3(Model):
             iou_threshold=args.iou_threshold
         )
 
-        return draw_boxes2(filtered_boxes, img, frame, self.classes, (args.size, args.size), True)
+        return draw_boxes2(filtered_boxes, img, self.classes, (args.size, args.size), True)
 
         # img.save(args.output_img)
         

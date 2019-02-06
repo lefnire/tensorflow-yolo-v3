@@ -241,35 +241,23 @@ def draw_boxes(boxes, img, cls_names, detection_size, is_letter_box_image):
             draw.text(box[:2], '{} {:.2f}%'.format(
                 cls_names[cls], score * 100), fill=color)
 
-def draw_boxes2(boxes, img, frame, cls_names, detection_size, is_letter_box_image):
-    #draw = ImageDraw.Draw(img)
-    found = False
-
+def draw_boxes2(boxes, img, cls_names, detection_size, is_letter_box_image):
+    out_boxes = []
     for cls, bboxs in boxes.items():
         color = tuple(np.random.randint(0, 256, 3))
         for box, score in bboxs:
-            found = True
-            box = convert_to_original_size(box, np.array(detection_size),
-                                           np.array(img.size),
-                                           is_letter_box_image)
-            left, top, right, bottom = box
-            GREEN = (0, 255, 0)
-            # https://docs.opencv.org/3.1.0/dc/da5/tutorial_py_drawing_functions.html
-            cv2.rectangle(frame, (left, top), (right, bottom), GREEN, 2)
-
-            font, font_scale, font_color, line_type = cv2.FONT_HERSHEY_SIMPLEX, 1, GREEN, 2
-            cv2.putText(
-                frame,
-                '{} {:.2f}%'.format(cls_names[cls], score * 100),
-                (left, top),
-                font,
-                font_scale,
-                font_color,
-                line_type
+            box = convert_to_original_size(
+                box,
+                np.array(detection_size),
+                np.array(img.size),
+                is_letter_box_image
             )
-            #draw.rectangle(box, outline=color)
-            #draw.text(box[:2], '{} {:.2f}%'.format(cls_names[cls], score * 100), fill=color)
-    return found
+            out_boxes.append({
+                'box': box,
+                'score': score,
+                'class': cls_names[cls]
+            })
+    return out_boxes
 
 def convert_to_original_size(box, size, original_size, is_letter_box_image):
     if is_letter_box_image:
