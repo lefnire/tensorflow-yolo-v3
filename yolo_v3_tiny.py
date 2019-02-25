@@ -2,8 +2,10 @@
 
 import numpy as np
 import tensorflow as tf
-from models.tensorflow_yolo_v3.yolo_v3 import _conv2d_fixed_padding, _fixed_padding, _get_size, \
-    _detection_layer, _upsample
+try:
+    from .yolo_v3 import _conv2d_fixed_padding, _fixed_padding, _get_size, _detection_layer, _upsample
+except:
+    from yolo_v3 import _conv2d_fixed_padding, _fixed_padding, _get_size, _detection_layer, _upsample
 
 slim = tf.contrib.slim
 
